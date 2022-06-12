@@ -8,12 +8,13 @@ import pandas as pd
 import pretty_midi
 
 # directory with the .mid files
-data_dir = pathlib.Path('data/groove-v1.0.0-midionly/groove')
+data_dir = pathlib.Path('data')
 
 # takes .mid filenames for printing
-filenames = glob.glob(str(data_dir/'*.mid*'))
+filenames = glob.glob(str(data_dir/'**/**/**/*.mid*'))
 print('Number of files:', len(filenames))                   
 
+# to specify the number of files to use, add a number after the :, eg [:10]
 for file in filenames[:]:
 
     print(file)
