@@ -13,15 +13,20 @@ import tensorflow as tf
 ################### Data preprocessing/extraction ###################
 # Convert the extracted notes from a file to a MIDI file
 def notes_to_midi(notes, output_file, instrument_name, velocity=100):
+    #load MIDI file
     pm = pretty_midi.PrettyMIDI()
+    #determine the instrument
     instrument = pretty_midi.Instrument(program=pretty_midi.instrument_name_to_program(instrument_name))
 
     prev_start = 0
     for i, note in notes.iterrows():
         start = float(prev_start + note['step'])
         end = float(start + note['duration'])
+        #create a note starting at star and ending at end
         note = pretty_midi.Note(velocity = velocity, pitch = int(note['pitch']), start = start, end = end)
+        #add the note to the instrument
         instrument.notes.append(note)
+        #new prev_start is the end of the previous note
         prev_start = start
 
     pm.instruments.append(instrument)
