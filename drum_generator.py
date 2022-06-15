@@ -13,9 +13,9 @@ import tensorflow as tf
 ################### Data preprocessing/extraction ###################
 # Convert the extracted notes from a file to a MIDI file
 def notes_to_midi(notes, output_file, instrument_name, velocity=100):
-    #load MIDI file
+    #create an MIDI object
     pm = pretty_midi.PrettyMIDI()
-    #determine the instrument
+    #create the instrument
     instrument = pretty_midi.Instrument(program=pretty_midi.instrument_name_to_program(instrument_name))
 
     prev_start = 0
@@ -29,7 +29,9 @@ def notes_to_midi(notes, output_file, instrument_name, velocity=100):
         #new prev_start is the end of the previous note
         prev_start = start
 
+    #add the instrument to the MIDI object pm
     pm.instruments.append(instrument)
+    #write out the MIDI data
     pm.write(output_file)
     return pm
 
