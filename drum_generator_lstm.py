@@ -93,7 +93,7 @@ def extract_training_data(filenames):
 def create_sequences(dataset, seq_length, vocab_size):
     seq_length = seq_length + 1
 
-    windows = dataset.window(seq_length, shift=1, stride=1, drop_remainder=True)
+    windows = dataset.window(seq_length, shift=1, stride=1, drop_remainder=True) # each window is a data set that contains a subset
 
     # Flatten the" dataset of datasets" into a dataset of tensors
     flatten = lambda x: x.batch(seq_length, drop_remainder=True)
