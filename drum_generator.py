@@ -11,11 +11,11 @@ import pretty_midi
 import tensorflow as tf
 
 ################### Data preprocessing/extraction ###################
-# Convert the extracted notes from a file to a MIDI file
+# After generating own notes, convert the extracted notes from a file to a MIDI file
 def notes_to_midi(notes, output_file, instrument_name, velocity=100):
     #create an MIDI object
     pm = pretty_midi.PrettyMIDI()
-    #create the instrument
+    #create the instrument with the corresponding instrument number
     instrument = pretty_midi.Instrument(program=pretty_midi.instrument_name_to_program(instrument_name))
 
     prev_start = 0
@@ -38,18 +38,22 @@ def notes_to_midi(notes, output_file, instrument_name, velocity=100):
 
 # Convert a MIDI file to a data frame of notes
 def midi_to_notes(midi_file):
+    # make a MIDI object
     pm = pretty_midi.PrettyMIDI(midi_file)
+    # decide what instrument it is
     instrument = pm.instruments[0]
+    # make an empty list for the notes
     notes = collections.defaultdict(list)
 
     # Sort the notes by start time
     sorted_notes = sorted(instrument.notes, key=lambda note: note.start)
     prev_start = sorted_notes[0].start
 
+    # add all the relevant information to the notes
     for note in sorted_notes:
         start = note.start
         end = note.end
-        notes['pitch'].append(note.pitch)
+        notes['pitch'].append(note.pitch)   # key.append(value)
         notes['start'].append(start)
         notes['end'].append(end)
         notes['step'].append(start - prev_start)
@@ -57,28 +61,29 @@ def midi_to_notes(midi_file):
         notes['name'].append(pretty_midi.note_number_to_drum_name(note.pitch))
         prev_start = start
 
-    return pd.DataFrame({name: np.array(value) for name, value in notes.items()})
+    return pd.DataFrame({name: np.array(value) for name, value in notes.items()}) # one big dataframe of all notes of one file
 
 
 ################### Data set ###################
-# Extract all the notes to train on
+# Extract all the notes to train on ////preprocessing
 def extract_training_data(filenames):
     num_files = len(filenames)
-    all_notes = []
+    all_notes = []  # make a list containing all the dataframes
     for file in filenames:  # filenames[:num_files]:
         notes = midi_to_notes(file)
         all_notes.append(notes)
     print("Number of songs from which notes were extracted:", len(all_notes))
-    random_song_notes = midi_to_notes(random.choice(filenames))
+    random_song_notes = midi_to_notes(random.choice(filenames)) # take a random file, translate to their notes
     # print(filenames[0])
     # random_song_notes = midi_to_notes(filenames[0])
-    all_notes = pd.concat(all_notes)
+    all_notes = pd.concat(all_notes)    # concatinate all notes -> make one dataframe
 
-    print("Number of notes parsed:", len(all_notes))
+    
+   print("Number of notes parsed:", len(all_notes))    # number of notes in the concatinated dataframe
+   
     key_order = ["pitch", "step", "duration"]
-
-    sorted_notes = np.stack([all_notes[key] for key in key_order], axis=1)
-    notes_data_set = tf.data.Dataset.from_tensor_slices(sorted_notes)
+    sorted_notes = np.stack([all_notes[key] for key in key_order], axis=1)  # sort the notes over the pitch, step and duration like a stack of the notes
+    notes_data_set = tf.data.Dataset.from_tensor_slices(sorted_notes) # make a data set of the stack
 
     return random_song_notes, notes_data_set, len(all_notes)
 
