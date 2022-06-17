@@ -79,7 +79,7 @@ def extract_training_data(filenames):
     all_notes = pd.concat(all_notes)    # concatinate all notes -> make one dataframe
 
     
-   print("Number of notes parsed:", len(all_notes))    # number of notes in the concatinated dataframe
+    print("Number of notes parsed:", len(all_notes))    # number of notes in the concatinated dataframe
    
     key_order = ["pitch", "step", "duration"]
     sorted_notes = np.stack([all_notes[key] for key in key_order], axis=1)  # sort the notes over the pitch, step and duration like a stack of the notes
