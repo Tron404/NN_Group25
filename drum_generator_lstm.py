@@ -11,7 +11,7 @@ import pretty_midi
 import tensorflow as tf
 
 ################### Data preprocessing/extraction ###################
-# After generating own notes, convert the extracted notes from a file to a MIDI file
+# After generating own notes, convert the extracted notes from a file to a MIDI file (this is not pre-processing, but post-processing)
 def notes_to_midi(notes, output_file, instrument_name, velocity=100):
     #create an MIDI object
     pm = pretty_midi.PrettyMIDI()
@@ -36,7 +36,7 @@ def notes_to_midi(notes, output_file, instrument_name, velocity=100):
     return pm
 
 
-# Convert a MIDI file to a data frame of notes
+# Convert a MIDI file to a data frame of notes ########Pre-processing
 def midi_to_notes(midi_file):
     # make a MIDI object
     pm = pretty_midi.PrettyMIDI(midi_file)
@@ -65,7 +65,7 @@ def midi_to_notes(midi_file):
 
 
 ################### Data set ###################
-# Extract all the notes to train on ////preprocessing
+# Extract all the notes to train on ########Pre-processing
 def extract_training_data(filenames):
     num_files = len(filenames)
     all_notes = []  # make a list containing all the dataframes
@@ -89,7 +89,7 @@ def extract_training_data(filenames):
 
 
 # Generates a sequence of notes to be fed to the network. A sequence will be split in a subsequence of input notes
-# and a final note as a label (i.e., the note the NN will have to predict).
+# and a final note as a label (i.e., the note the NN will have to predict). ########Pre-processing
 def create_sequences(dataset, seq_length, vocab_size):
     seq_length = seq_length + 1
 
@@ -127,6 +127,8 @@ def oragnize_training_data_and_parameters(notes_data_set, parsed_notes_total):
         tf.data.experimental.AUTOTUNE))
 
     return sequence_length, vocabulary_size, training_data_set
+
+###### Pre-processing ends here!!! #######
 
 
 ################### Model creation + training ###################
