@@ -213,13 +213,13 @@ def notes_generator(model, random_song_notes, sequence_length, vocabulary_size):
 
 def main():
     # Initiation
-    data_dir = pathlib.Path('data/groove_short')
+    data_dir = pathlib.Path('groove_safe')
     checkpoints_path = "training_checkpoints/checkpoint_{epoch:04d}.ckpt"
     checkpoints_dir = os.path.dirname(checkpoints_path)
     filenames = glob.glob(str(data_dir / '*.mid*'))
     print('Number of files (songs):', len(filenames))
 
-    random_song_notes, notes_data_set, notes_count = extract_training_data(filenames)
+    random_song_notes, notes_data_set, notes_count = extract_training_data(filenames[:100])
     sequence_length, vocabulary_size, training_data_set = oragnize_training_data_and_parameters(notes_data_set, notes_count)
 
     # Model building + training

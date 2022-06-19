@@ -3,7 +3,6 @@
 import collections
 import os
 import glob
-import sys
 import numpy as np
 import random
 import pathlib
@@ -11,9 +10,7 @@ import pandas as pd
 import pretty_midi
 import tensorflow as tf
 
-training_samples_size = 250
-global max_text
-max_test = -1
+training_samples_size = 10
 
 ################### Data preprocessing/extraction ###################
 # Convert the extracted notes from a file to a MIDI file
@@ -32,9 +29,6 @@ def notes_to_midi(notes, output_file, instrument_name, velocity=100):
     pm.instruments.append(instrument)
     pm.write(output_file)
     return pm
-
-def pad_midi_frames(midi_frame):
-    return midi_frame # changed
 
 # Convert a MIDI file to a data frame of notes
 def midi_to_notes(midi_file):
@@ -67,16 +61,10 @@ def midi_to_notes(midi_file):
 def extract_training_data(filenames):
     # num_files = len(filenames)
     all_notes = []
-    max = -1
-
+ 
     for file in filenames:  # filenames[:num_files]:
-        max = len(midi_to_notes(file)) if len(midi_to_notes(file)) > max else max
         all_notes.append(midi_to_notes(file))
     print("Number of songs from which notes were extracted:", len(all_notes))
-    print(all_notes)
-
-    global max_test
-    max_test = max_test if max_test > max else max
 
     random_song_notes = random.choice(all_notes)
     all_notes = pd.concat(all_notes)
@@ -140,17 +128,17 @@ def mse_with_positive_pressure(y_true, y_pred):
 
 def build_model(sequence_length):
     learning_rate = 0.005
-    loss_weights = {'pitch': 0.05, 'step': 1.0, 'duration': 1.0}
+    loss_weights = {'pitch': 0.05, 'step': 1.0, 'duration': 1.0} # weights for the Loss of each feature
 
     inputs = tf.keras.Input((sequence_length, 3))
     gru_layer_1 = tf.keras.layers.GRU(64, return_sequences = True)(inputs)
-    gru_layer_2 = tf.keras.layers.GRU(64, return_sequences = True)(gru_layer_1)
-    gru_layer_3 = tf.keras.layers.GRU(64)(gru_layer_2)
+    gru_layer_2 = tf.keras.layers.GRU(64)(gru_layer_1)
+    # gru_layer_3 = tf.keras.layers.GRU(64)(gru_layer_2)
 
     outputs = {
-        "pitch": tf.keras.layers.Dense(128, name="pitch")(gru_layer_3),
-        "step": tf.keras.layers.Dense(1, name="step")(gru_layer_3),
-        "duration": tf.keras.layers.Dense(1, name="duration")(gru_layer_3),
+        "pitch": tf.keras.layers.Dense(128, name="pitch")(gru_layer_2),
+        "step": tf.keras.layers.Dense(1, name="step")(gru_layer_2),
+        "duration": tf.keras.layers.Dense(1, name="duration")(gru_layer_2),
     }
 
     loss = {
@@ -176,6 +164,8 @@ def one_note_predictor(notes, model, temperature=1.0):
     pitch_logits = predictions["pitch"]
     step = predictions["step"]
     duration = predictions["duration"]
+
+    print(pitch_logits)
 
     pitch_logits /= temperature
     pitch = tf.random.categorical(pitch_logits, num_samples=1)
@@ -217,7 +207,7 @@ def notes_generator(model, random_song_notes, sequence_length, vocabulary_size):
 
 def main():
     # Initiation
-    data_dir = pathlib.Path('drum_midi\data\e-gmd-v1.0.0-midi\e-gmd-v1.0.0\drummer1')
+    data_dir = pathlib.Path('groove_safe')
     checkpoints_path = "training_checkpoints/checkpoint_{epoch:04d}.ckpt"
     checkpoints_dir = os.path.dirname(checkpoints_path)
     filenames = glob.glob(str(data_dir / '*.mid*'))
@@ -239,9 +229,9 @@ def main():
     latest = tf.train.latest_checkpoint(checkpoints_dir)
     drummer_boi = build_model(sequence_length)
     drummer_boi.load_weights("training_checkpoints/checkpoint_0008.ckpt")
+    model.save("GRU")
 
     # Music generation
-    print("max_size ===== ", max_test)
     notes_generator(drummer_boi, random_song_notes, sequence_length, vocabulary_size)
     model.summary()
 
