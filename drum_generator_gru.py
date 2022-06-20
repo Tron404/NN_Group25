@@ -10,7 +10,7 @@ import pandas as pd
 import pretty_midi
 import tensorflow as tf
 
-training_samples_size = 10
+training_samples_size = 50
 
 ################### Data preprocessing/extraction ###################
 # Convert the extracted notes from a file to a MIDI file
@@ -107,7 +107,7 @@ def create_sequences(dataset, seq_length, vocab_size):
 
 
 def oragnize_training_data_and_parameters(notes_data_set, parsed_notes_total):
-    sequence_length = 15
+    sequence_length = 50
     vocabulary_size = 128
     sequence_data_set = create_sequences(notes_data_set, sequence_length, vocabulary_size)
 
@@ -125,26 +125,41 @@ def mse_with_positive_pressure(y_true, y_pred):
     positive_pressure = 10 * tf.maximum(-y_pred, 0.0)
     return tf.reduce_mean(mse + positive_pressure)
 
+# um, no good tbh
+def mae_with_possitive_pressure(y_true, y_pred):
+    mae = tf.abs(y_true - y_pred)
+    possitive_pressure = 10 * tf.maximum(-y_pred, 0.0)
+    return tf.reduce_mean(mae + possitive_pressure)
 
+
+# try L1?
 def build_model(sequence_length):
     learning_rate = 0.005
-    loss_weights = {'pitch': 0.05, 'step': 1.0, 'duration': 1.0} # weights for the Loss of each feature
+    loss_weights = {'pitch': 0.3, 'step': 1.0, 'duration': 1.0} # weights for the Loss of each feature
 
     inputs = tf.keras.Input((sequence_length, 3))
-    gru_layer_1 = tf.keras.layers.GRU(64, return_sequences = True)(inputs)
-    gru_layer_2 = tf.keras.layers.GRU(64)(gru_layer_1)
+    gru_layer_1 = tf.keras.layers.GRU(60, return_sequences = True)(inputs)
+    gru_layer_2 = tf.keras.layers.GRU(60, return_sequences = True)(gru_layer_1)
+    gru_layer_3 = tf.keras.layers.GRU(60, return_sequences = True)(gru_layer_2)
+    gru_layer_4 = tf.keras.layers.GRU(60, return_sequences = True)(gru_layer_3)
+    gru_layer_5 = tf.keras.layers.GRU(60)(gru_layer_4)
+
+
     # gru_layer_3 = tf.keras.layers.GRU(64)(gru_layer_2)
 
     outputs = {
-        "pitch": tf.keras.layers.Dense(128, name="pitch")(gru_layer_2),
-        "step": tf.keras.layers.Dense(1, name="step")(gru_layer_2),
-        "duration": tf.keras.layers.Dense(1, name="duration")(gru_layer_2),
+        "pitch": tf.keras.layers.Dense(59, name="pitch")(gru_layer_5),
+        "step": tf.keras.layers.Dense(1, name="step")(gru_layer_5),
+        "duration": tf.keras.layers.Dense(1, name="duration")(gru_layer_5),
     }
 
+    # tempo as output as well?
+
     loss = {
-        "pitch": tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        "step": mse_with_positive_pressure,
-        "duration": mse_with_positive_pressure,
+        # "pitch": tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        "pitch": tf.keras.losses.Huber(),
+        "step": mae_with_possitive_pressure,
+        "duration": mae_with_possitive_pressure,
     }
 
     model = tf.keras.Model(inputs, outputs)
@@ -165,7 +180,7 @@ def one_note_predictor(notes, model, temperature=1.0):
     step = predictions["step"]
     duration = predictions["duration"]
 
-    print(pitch_logits)
+    # print(pitch_logits)
 
     pitch_logits /= temperature
     pitch = tf.random.categorical(pitch_logits, num_samples=1)
@@ -218,7 +233,6 @@ def main():
     sequence_length, vocabulary_size, training_data_set = oragnize_training_data_and_parameters(notes_data_set, notes_count)
 
     # Model building + training
-    # print()
     model = build_model(sequence_length)
 
     callbacks = [tf.keras.callbacks.ModelCheckpoint(filepath=checkpoints_path, save_weights_only=True),
@@ -227,12 +241,12 @@ def main():
     model.fit(training_data_set, epochs=epochs, callbacks=callbacks)
 
     latest = tf.train.latest_checkpoint(checkpoints_dir)
-    drummer_boi = build_model(sequence_length)
-    drummer_boi.load_weights("training_checkpoints/checkpoint_0008.ckpt")
+    # drummer_boi = build_model(sequence_length)
+    # drummer_boi.load_weights("training_checkpoints/checkpoint_0008.ckpt")
     model.save("GRU")
 
     # Music generation
-    notes_generator(drummer_boi, random_song_notes, sequence_length, vocabulary_size)
+    notes_generator(model, random_song_notes, sequence_length, vocabulary_size)
     model.summary()
 
 
