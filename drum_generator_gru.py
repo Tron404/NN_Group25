@@ -9,8 +9,9 @@ import pathlib
 import pandas as pd
 import pretty_midi
 import tensorflow as tf
+from keras import backend
 
-training_samples_size = 50
+training_samples_size = 10
 
 ################### Data preprocessing/extraction ###################
 # Convert the extracted notes from a file to a MIDI file
@@ -108,7 +109,7 @@ def create_sequences(dataset, seq_length, vocab_size):
 
 def oragnize_training_data_and_parameters(notes_data_set, parsed_notes_total):
     sequence_length = 50
-    vocabulary_size = 128
+    vocabulary_size = 60
     sequence_data_set = create_sequences(notes_data_set, sequence_length, vocabulary_size)
 
     batch_size = 64
@@ -125,17 +126,33 @@ def mse_with_positive_pressure(y_true, y_pred):
     positive_pressure = 10 * tf.maximum(-y_pred, 0.0)
     return tf.reduce_mean(mse + positive_pressure)
 
-# um, no good tbh
 def mae_with_possitive_pressure(y_true, y_pred):
     mae = tf.abs(y_true - y_pred)
     possitive_pressure = 10 * tf.maximum(-y_pred, 0.0)
     return tf.reduce_mean(mae + possitive_pressure)
 
+def custom_huber(y_true, y_pred):
+    delta = tf.cast(1.1, dtype=backend.floatx())
+    y_true_tf = tf.cast(y_true, dtype=backend.floatx())
+    y_pred_tf = tf.cast(y_pred, dtype=backend.floatx())
+    diff = tf.subtract(y_pred_tf, y_true_tf)
+    abs_diff = tf.abs(diff)
 
-# try L1?
+    half = tf.convert_to_tensor(0.5, dtype=abs_diff.dtype)
+
+    hbl = tf.where(abs_diff <= delta, half * tf.square(diff), delta * abs_diff - half * tf.square(delta))
+
+    pressure = tf.where(diff >= 0, 0.0, tf.square(diff))
+    # hbl_pressure = tf.divide(pressure, hbl)
+
+    return backend.mean(hbl  +pressure, axis=-1)
+    # return backend.mean(hbl+tf.square(pressure), axis=-1)
+
+    # return backend.mean(hbl_pressure, axis=-1)
+
 def build_model(sequence_length):
     learning_rate = 0.005
-    loss_weights = {'pitch': 0.3, 'step': 1.0, 'duration': 1.0} # weights for the Loss of each feature
+    loss_weights = {'pitch': 0.5, 'step': 1.0, 'duration': 1.0} # weights for the Loss of each feature
 
     inputs = tf.keras.Input((sequence_length, 3))
     gru_layer_1 = tf.keras.layers.GRU(60, return_sequences = True)(inputs)
@@ -157,7 +174,7 @@ def build_model(sequence_length):
 
     loss = {
         # "pitch": tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        "pitch": tf.keras.losses.Huber(),
+        "pitch": custom_huber,
         "step": mae_with_possitive_pressure,
         "duration": mae_with_possitive_pressure,
     }
@@ -196,7 +213,7 @@ def one_note_predictor(notes, model, temperature=1.0):
 
 
 def notes_generator(model, random_song_notes, sequence_length, vocabulary_size):
-    temperature = 5.0 # adds a bit of randomness  to the generated notes
+    temperature = 4.0 # adds a bit of randomness  to the generated notes
     num_predictions = 100
     key_order = ["pitch", "step", "duration"]
    
