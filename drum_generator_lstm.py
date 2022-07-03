@@ -9,6 +9,10 @@ import pathlib
 import pandas as pd
 import pretty_midi
 import tensorflow as tf
+from keras import backend
+
+training_sample_size = 500
+note_baseline = 35.0 # init value, it will change after going through the data
 
 ################### Data preprocessing/extraction ###################
 # After generating own notes, convert the extracted notes from a file to a MIDI file (this is not pre-processing, but post-processing)
@@ -69,15 +73,16 @@ def midi_to_notes(midi_file):
 def extract_training_data(filenames):
     num_files = len(filenames)
     all_notes = []  # make a list containing all the dataframes
-    for file in filenames:  # filenames[:num_files]:
-        notes = midi_to_notes(file)
-        all_notes.append(notes)
-    print("Number of songs from which notes were extracted:", len(all_notes))
-    random_song_notes = midi_to_notes(random.choice(filenames)) # take a random file, translate to their notes
-    # print(filenames[0])
-    # random_song_notes = midi_to_notes(filenames[0])
-    all_notes = pd.concat(all_notes)    # concatinate all notes -> make one dataframe
+    global note_baseline
 
+    for file in filenames:  # filenames[:num_files]:
+        aux = midi_to_notes(file)
+        note_baseline = np.min([note_baseline, np.min(aux["pitch"])])
+        all_notes.append(aux)
+
+    print("Number of songs from which notes were extracted:", len(all_notes))
+    random_song_notes = random.choice(all_notes)
+    all_notes = pd.concat(all_notes)  # concatinate all notes -> make one dataframe
     
     print("Number of notes parsed:", len(all_notes))    # number of notes in the concatinated dataframe
    
@@ -117,16 +122,19 @@ def create_sequences(dataset, seq_length, vocab_size):
 
 
 def oragnize_training_data_and_parameters(notes_data_set, parsed_notes_total):
-    sequence_length = 20
-    vocabulary_size = 128
+    sequence_length = 50
+    vocabulary_size = 61
     sequence_data_set = create_sequences(notes_data_set, sequence_length, vocabulary_size)
 
     batch_size = 64
+    print(parsed_notes_total)
     buffer_size = parsed_notes_total - sequence_length  # the number of items in the dataset
-    training_data_set = (sequence_data_set.shuffle(buffer_size).batch(batch_size, drop_remainder=True).cache().prefetch(
+    all_data = (sequence_data_set.shuffle(buffer_size).batch(batch_size, drop_remainder=True).cache().prefetch(
         tf.data.experimental.AUTOTUNE))
 
-    return sequence_length, vocabulary_size, training_data_set
+    training_data_set, testing_data_set = all_data.take(int(0.7*len(list(all_data)))), all_data.skip(int(0.7*len(list(all_data))))
+    
+    return sequence_length, vocabulary_size, training_data_set, testing_data_set
 
 ###### Pre-processing ends here!!! #######
 
@@ -137,22 +145,40 @@ def mse_with_positive_pressure(y_true, y_pred):
     positive_pressure = 10 * tf.maximum(-y_pred, 0.0)
     return tf.reduce_mean(mse + positive_pressure)
 
+@tf.function
+def custom_huber(y_true, y_pred):
+    delta = tf.cast(1.1, dtype=backend.floatx())
+    y_true_tf = tf.cast(y_true, dtype=backend.floatx())
+    y_pred_tf = tf.cast(y_pred, dtype=backend.floatx())
+    diff = tf.subtract(y_pred_tf, y_true_tf)
+    abs_diff = tf.abs(diff)
+
+    half = tf.convert_to_tensor(0.5, dtype=abs_diff.dtype)
+    hbl = tf.where(abs_diff <= delta, half * tf.square(diff), delta * abs_diff - half * tf.square(delta))
+    note_baseline_tf = tf.cast(note_baseline, dtype=abs_diff.dtype)
+
+    pressure = tf.subtract(y_pred_tf, note_baseline_tf)
+    pressure = tf.divide(pressure, note_baseline_tf)
+    pressure = tf.multiply(pressure, tf.cast(5.0, dtype=pressure.dtype))
+    pressure = tf.maximum(-pressure, 0.0)
+
+    return backend.mean(hbl + pressure, axis=-1)
 
 def build_model(sequence_length):
-    learning_rate = 0.005
+    learning_rate = 0.001
 
     inputs = tf.keras.Input((sequence_length, 3))
-    lstm_layer_1 = tf.keras.layers.LSTM(64, return_sequences = True)(inputs)
-    lstm_layer_2 = tf.keras.layers.LSTM(64)(lstm_layer_1)
+    lstm_layer_1 = tf.keras.layers.LSTM(61, return_sequences = True, kernel_regularizer=tf.keras.regularizers.L2(0.01))(inputs)
+    lstm_layer_2 = tf.keras.layers.LSTM(61, kernel_regularizer=tf.keras.regularizers.L2(0.01))(lstm_layer_1)
 
     outputs = {
-        "pitch": tf.keras.layers.Dense(128, name="pitch")(lstm_layer_2),
+        "pitch": tf.keras.layers.Dense(61, name="pitch")(lstm_layer_2),
         "step": tf.keras.layers.Dense(1, name="step")(lstm_layer_2),
         "duration": tf.keras.layers.Dense(1, name="duration")(lstm_layer_2),
     }
 
     loss = {
-        "pitch": tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        "pitch": custom_huber,
         "step": mse_with_positive_pressure,
         "duration": mse_with_positive_pressure,
     }
@@ -160,7 +186,7 @@ def build_model(sequence_length):
     model = tf.keras.Model(inputs, outputs)
 
     model.compile(loss=loss,
-                  loss_weights={'pitch': 0.05, 'step': 1.0, 'duration': 1.0},
+                  loss_weights={'pitch': 0.5, 'step': 1.0, 'duration': 1.0},
                   optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
     return model
@@ -189,8 +215,8 @@ def one_note_predictor(notes, model, temperature=1.0):
 
 
 def notes_generator(model, random_song_notes, sequence_length, vocabulary_size):
-    temperature = 4.0 # adds a bit of randomness  to the generated notes
-    num_predictions = 100
+    temperature = 5.0 # adds a bit of randomness  to the generated notes
+    num_predictions = 300
     key_order = ["pitch", "step", "duration"]
 
     sample_notes = np.stack([random_song_notes[key] for key in key_order], axis=1)
@@ -201,6 +227,9 @@ def notes_generator(model, random_song_notes, sequence_length, vocabulary_size):
     prev_start = 0
     for _ in range(num_predictions):
         pitch, step, duration = one_note_predictor(input_notes, model, temperature)
+        while pitch < note_baseline:
+            pitch, step, duration = one_note_predictor(input_notes, model, temperature)
+
         start = prev_start + step
         end = start + duration
         input_note = (pitch, step, duration)
@@ -210,7 +239,7 @@ def notes_generator(model, random_song_notes, sequence_length, vocabulary_size):
         prev_start = start
 
     generated_notes = pd.DataFrame(generated_notes, columns=(*key_order, "start", "end"))
-    out_pm = notes_to_midi(generated_notes, output_file="output.mid", instrument_name="Synth drum")
+    out_pm = notes_to_midi(generated_notes, output_file="output_LSTM.mid", instrument_name="Melodic Tom")
 
 
 def main():
@@ -220,24 +249,29 @@ def main():
     checkpoints_dir = os.path.dirname(checkpoints_path)
     filenames = glob.glob(str(data_dir / '*.mid*'))
     print('Number of files (songs):', len(filenames))
+    print("===================")
+    print("Extracting data")
 
-    random_song_notes, notes_data_set, notes_count = extract_training_data(filenames[:100])
-    sequence_length, vocabulary_size, training_data_set = oragnize_training_data_and_parameters(notes_data_set, notes_count)
+    random_song_notes, notes_data_set, notes_count = extract_training_data(filenames[:training_sample_size])
+    sequence_length, vocabulary_size, training_data_set, testing_data_set = oragnize_training_data_and_parameters(notes_data_set, notes_count)
 
     # Model building + training
     model = build_model(sequence_length)
 
-    callbacks = [tf.keras.callbacks.ModelCheckpoint(filepath=checkpoints_path, save_weights_only=True),
-                 tf.keras.callbacks.EarlyStopping(monitor='loss', patience=5, verbose=1, restore_best_weights=True), ]
+    # callbacks = [tf.keras.callbacks.ModelCheckpoint(filepath=checkpoints_path, save_weights_only=True),
+    #              tf.keras.callbacks.EarlyStopping(monitor='loss', patience=5, verbose=1, restore_best_weights=True), ]
+    
+    callbacks = [tf.keras.callbacks.ModelCheckpoint(filepath=checkpoints_path, save_weights_only=True), ]
+    
     epochs = 50
-    model.fit(training_data_set, epochs=epochs, callbacks=callbacks)
+    metrics = model.fit(training_data_set, epochs=epochs, callbacks=callbacks, validation_data=testing_data_set)
+    df = pd.DataFrame(metrics.history).to_csv("metrics_LSTM")
 
-    latest = tf.train.latest_checkpoint(checkpoints_dir)
-    drummer_boi = build_model(sequence_length)
-    drummer_boi.load_weights("training_checkpoints/checkpoint_0008.ckpt")
+    model.save("LSTM")
+    model.evaluate(testing_data_set)
 
     # Music generation
-    notes_generator(drummer_boi, random_song_notes, sequence_length, vocabulary_size)
+    notes_generator(model, random_song_notes, sequence_length, vocabulary_size)
     model.summary()
 
 

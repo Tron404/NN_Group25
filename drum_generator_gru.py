@@ -119,7 +119,7 @@ def create_sequences(dataset, seq_length, vocab_size):
 
 def oragnize_training_data_and_parameters(notes_data_set, parsed_notes_total):
     sequence_length = 50
-    vocabulary_size = 60
+    vocabulary_size = 61
     sequence_data_set = create_sequences(notes_data_set, sequence_length, vocabulary_size)
 
     batch_size = 64
@@ -163,11 +163,11 @@ def build_model(sequence_length):
     loss_weights = {'pitch': 0.5, 'step': 1.0, 'duration': 1.0} # weights for the Loss of each feature
 
     inputs = tf.keras.Input((sequence_length, 3))
-    gru_layer_1 = tf.keras.layers.GRU(60, return_sequences = True, kernel_regularizer=tf.keras.regularizers.L2(0.01))(inputs)
-    gru_layer_2 = tf.keras.layers.GRU(60, return_sequences = False, kernel_regularizer=tf.keras.regularizers.L2(0.01))(gru_layer_1)
+    gru_layer_1 = tf.keras.layers.GRU(61, return_sequences = True, kernel_regularizer=tf.keras.regularizers.L2(0.01))(inputs)
+    gru_layer_2 = tf.keras.layers.GRU(61, return_sequences = False, kernel_regularizer=tf.keras.regularizers.L2(0.01))(gru_layer_1)
 
     outputs = {
-        "pitch": tf.keras.layers.Dense(60, name="pitch")(gru_layer_2),
+        "pitch": tf.keras.layers.Dense(61, name="pitch")(gru_layer_2),
         "step": tf.keras.layers.Dense(1, name="step")(gru_layer_2),
         "duration": tf.keras.layers.Dense(1, name="duration")(gru_layer_2),
     }
@@ -236,7 +236,7 @@ def notes_generator(model, random_song_notes, sequence_length, vocabulary_size):
         prev_start = start
 
     generated_notes = pd.DataFrame(generated_notes, columns=(*key_order, "start", "end"))
-    out_pm = notes_to_midi(generated_notes, output_file="output.mid", instrument_name="Melodic Tom")
+    out_pm = notes_to_midi(generated_notes, output_file="output_GRU.mid", instrument_name="Melodic Tom")
 
 def main():
     # Initiation
