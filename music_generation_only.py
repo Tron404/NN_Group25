@@ -10,6 +10,7 @@ import pandas as pd
 import pretty_midi
 import tensorflow as tf
 import keras
+
 from keras import backend
 
 training_sample_size = 50
